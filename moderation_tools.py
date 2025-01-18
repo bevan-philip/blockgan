@@ -1,14 +1,11 @@
 import argparse
-from dataclasses import dataclass, field
 import datetime
+from dataclasses import dataclass, field
 from typing import Optional
 
-from atproto import Client, IdResolver, models
-import atproto_client
-import atproto_client.models.app
-import atproto_client.models.app.bsky
-import atproto_client.models.app.bsky.graph
 import atproto_client.models.app.bsky.graph.listitem
+import sqlite_utils
+from atproto import Client, IdResolver, models
 
 
 @dataclass
@@ -32,13 +29,17 @@ class BlueskyAPI:
     """Class for interacting with the Bluesky API."""
 
     handle: str
+    session_string: str | None
     app_password: str
 
     _client: Client = field(default_factory=Client)
     _resolver: IdResolver = field(default_factory=IdResolver)
 
     def __post_init__(self):
-        self._client.login(self.handle, self.app_password)
+        if self.session_string:
+            self._client.login(session_string=self.session_string)
+        else:
+            self._client.login(self.handle, self.app_password)
 
     def _url_to_did_rkey(self, url: str) -> Optional[DID_RKey]:
         """
@@ -77,30 +78,37 @@ class BlueskyAPI:
         """
         Get the likes from a post, using its Bluesky url.
         """
-        did_rkey = self._did_rkey_to_atproto_uri(self._url_to_did_rkey(url), constants.post)
+        did_rkey = self._did_rkey_to_atproto_uri(
+            self._url_to_did_rkey(url), constants.post
+        )
         page = self._client.get_likes(did_rkey)
-        
+
         likes = page.likes
 
         while page.cursor and all:
             page = self._client.get_likes(did_rkey, cursor=page.cursor)
-            likes.append(page.likes)
+            if page.likes:
+                likes += page.likes
 
         return likes
-    
-    def add_item_to_list(self, repo_uri: str, record_did: str) -> models.AppBskyGraphListitem.CreateRecordResponse:
+
+    def add_item_to_list(
+        self, repo_uri: str, subject_did: str
+    ) -> models.AppBskyGraphListitem.CreateRecordResponse:
         record = atproto_client.models.app.bsky.graph.listitem.Record(
             created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            subject=record_did,
-            list=repo_uri
+            subject=subject_did,
+            list=repo_uri,
         )
 
         return self._client.app.bsky.graph.listitem.create(
-            repo=self._client.me.did,
-            record=record       
+            repo=self._client.me.did, record=record
         )
 
+
 if __name__ == "__main__":
+    db = sqlite_utils.Database("moderation.db")
+
     # Temporary development CLI interface.
     parser = argparse.ArgumentParser()
     parser.add_argument("handle")
@@ -109,9 +117,44 @@ if __name__ == "__main__":
     parser.add_argument("list_url")
     args = parser.parse_args()
 
-    api = BlueskyAPI(args.handle, args.app_password)
+    session_string = None
+    try:
+        session_string = db["session"].get(args.handle)["session_string"]
+    except sqlite_utils.db.NotFoundError:
+        pass  
 
-    list_uri = api._did_rkey_to_atproto_uri(api._url_to_did_rkey(args.list_url), "app.bsky.graph.list")
-    test = api.fetch_likes(args.post_url, all=False)[1]
-    test_did = test.actor.did
-    api.add_item_to_list(list_uri, test_did)
+    api = BlueskyAPI(args.handle, session_string, args.app_password)
+
+    list_uri = api._did_rkey_to_atproto_uri(
+        api._url_to_did_rkey(args.list_url), "app.bsky.graph.list"
+    )
+    # test = api.fetch_likes(args.post_url, all=False)[1]
+    # test_did = test.actor.did
+    # api.add_item_to_list(list_uri, test_did)
+
+    if not session_string:
+        db["session"].insert(
+            {
+                "handle": args.handle, # need to set this as a primary key.
+                "session_string": api._client.export_session_string()
+            }, pk="handle"
+        )
+
+    def session_change(event, session):
+        db["session"].update(args.handle, session.encode())
+
+    api._client.on_session_change(session_change)
+
+
+    likes = api.fetch_likes(args.post_url)
+    db_to_add = db["to_be_added"]
+    for like in likes:
+        # print(like)
+        db_to_add.insert(
+            {
+                "subject": like.actor.did,
+                "handle": like.actor.handle,
+                "source": args.post_url,
+                "action": "like"
+            }
+        )
