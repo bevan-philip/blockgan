@@ -70,13 +70,15 @@ class BlueskyAPI:
         """
         Get the likes from a post, using its Bluesky url.
         """
-        did_rkey = self._url_to_did_rkey(url)
-        print(
-            self._client.get_likes(
-                self._did_rkey_to_atproto_uri(did_rkey, constants.post)
-            )
-        )
+        did_rkey = self._did_rkey_to_atproto_uri(self._url_to_did_rkey(url), constants.post)
+        page = self._client.get_likes(did_rkey)
+        likes = page.likes
 
+        while page.cursor:
+            page = self._client.get_likes(did_rkey, cursor=page.cursor)
+            likes.append(page.likes)
+
+        return likes
 
 if __name__ == "__main__":
     # Temporary development CLI interface.
@@ -87,4 +89,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     api = BlueskyAPI(args.handle, args.app_password)
-    api.fetch_likes(args.url)
+    print(api.fetch_likes(args.url))
