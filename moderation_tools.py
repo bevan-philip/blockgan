@@ -135,7 +135,7 @@ if __name__ == "__main__":
     if not session_string:
         db["session"].insert(
             {
-                "handle": args.handle, # need to set this as a primary key.
+                "handle": args.handle, 
                 "session_string": api._client.export_session_string()
             }, pk="handle"
         )
