@@ -43,7 +43,7 @@ wheels = [
 ]
 
 [[package]]
-name = "bluesky-blocker"
+name = "bluesky-moderation-tools"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
