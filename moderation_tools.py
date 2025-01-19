@@ -6,6 +6,7 @@ from typing import Optional
 import atproto_client.models.app.bsky.graph.listitem
 import sqlite_utils
 from atproto import Client, IdResolver, models
+from jsonargparse import auto_cli
 
 
 @dataclass
@@ -105,56 +106,91 @@ class BlueskyAPI:
             repo=self._client.me.did, record=record
         )
 
+@dataclass
+class Moderation:
+    _db: sqlite_utils.Database = field(init=False)
+    _api: BlueskyAPI = field(init=False)
+
+    handle: str
+    app_password: str
+    list_url: str
+    
+    list_uri: str = field(init=False)
+
+    def __post_init__(self):
+        self._db = sqlite_utils.Database("moderation.db")
+
+        # If we can use a session_string from a previous session, do that - there are rate limits here.
+        session_string = None
+        try:
+            session_string = self._db["session"].get(self.handle)["session_string"]
+        except sqlite_utils.db.NotFoundError:
+            pass  
+    
+        self._api = BlueskyAPI(self.handle, session_string, self.app_password)
+
+        # Handle the session string, and save it in the future.
+        if not session_string:
+            self._db["session"].insert(
+                {
+                    "handle": self.handle, 
+                    "session_string": self._api._client.export_session_string()
+                }, pk="handle"
+            )
+
+        def session_change(event, session):
+            self._db["session"].update(self.handle, session.encode())
+
+        self._api._client.on_session_change(session_change)
+
+        self.list_uri = self._api._did_rkey_to_atproto_uri(
+            self._api._url_to_did_rkey(self.list_url), constants.list 
+        )
+
+
+    def add_likes_to_be_processed(self, post_url: str) -> None:
+        """
+        Adds all of the likes from a particular post to the database.
+        """
+        likes = self._api.fetch_likes(post_url)
+        db_to_add = self._db["to_be_added"]
+        for like in likes:
+            # We don't look at the cache, or even if there are duplicates already in this list.
+            # We choose to handle that all later.
+            db_to_add.insert(
+                {
+                    "subject": like.actor.did,
+                    "handle": like.actor.handle,
+                    "source": post_url,
+                    "action": "like"
+                }
+            )
+
+    def process_list(self):
+        """
+        Adds all of the list additions from the database to the list.
+        """
+        for row in self._db["to_be_added"].rows:
+            try:
+                self._db["added"].get(row["subject"])
+            except sqlite_utils.db.NotFoundError:
+                self._db["added"].insert(
+                    {
+                        "subject": row["subject"],
+                        "handle": row["handle"],
+                        "source": row["source"],
+                        "action": row["action"]
+                    }, pk="subject"
+                )
+                # Bit to handle adding to the Bluesky moderation list.
+            else:
+                print(f"{row['subject']} (handle: {row['handle']}) already added to list, ignoring.")
+
+
 
 if __name__ == "__main__":
-    db = sqlite_utils.Database("moderation.db")
-
-    # Temporary development CLI interface.
-    parser = argparse.ArgumentParser()
-    parser.add_argument("handle")
-    parser.add_argument("app_password")
-    parser.add_argument("post_url")
-    parser.add_argument("list_url")
-    args = parser.parse_args()
-
-    session_string = None
-    try:
-        session_string = db["session"].get(args.handle)["session_string"]
-    except sqlite_utils.db.NotFoundError:
-        pass  
-
-    api = BlueskyAPI(args.handle, session_string, args.app_password)
-
-    list_uri = api._did_rkey_to_atproto_uri(
-        api._url_to_did_rkey(args.list_url), "app.bsky.graph.list"
-    )
     # test = api.fetch_likes(args.post_url, all=False)[1]
     # test_did = test.actor.did
     # api.add_item_to_list(list_uri, test_did)
 
-    if not session_string:
-        db["session"].insert(
-            {
-                "handle": args.handle, 
-                "session_string": api._client.export_session_string()
-            }, pk="handle"
-        )
-
-    def session_change(event, session):
-        db["session"].update(args.handle, session.encode())
-
-    api._client.on_session_change(session_change)
-
-
-    likes = api.fetch_likes(args.post_url)
-    db_to_add = db["to_be_added"]
-    for like in likes:
-        # print(like)
-        db_to_add.insert(
-            {
-                "subject": like.actor.did,
-                "handle": like.actor.handle,
-                "source": args.post_url,
-                "action": "like"
-            }
-        )
+    auto_cli(Moderation)
