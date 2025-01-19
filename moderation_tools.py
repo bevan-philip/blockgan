@@ -101,6 +101,9 @@ class BlueskyAPI:
     def add_item_to_list(
         self, repo_uri: str, subject_did: str
     ) -> models.AppBskyGraphListitem.CreateRecordResponse:
+        """
+        Adds an item to the moderation list.
+        """
         record = atproto_client.models.app.bsky.graph.listitem.Record(
             created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
             subject=subject_did,
@@ -119,9 +122,6 @@ class Moderation:
 
     handle: str
     app_password: str
-    list_url: str
-
-    list_uri: str = field(init=False)
 
     # The limits from https://docs.bsky.app/docs/advanced-guides/rate-limits, with a decent amount of 
     # headroom for regular usage.
@@ -157,10 +157,6 @@ class Moderation:
 
         self._api._client.on_session_change(session_change)
 
-        self.list_uri = self._api._did_rkey_to_atproto_uri(
-            self._api._url_to_did_rkey(self.list_url), constants.list
-        )
-
     def add_likes_to_be_processed(self, post_url: str) -> None:
         """
         Adds all of the likes from a particular post to the database.
@@ -180,10 +176,14 @@ class Moderation:
             except Exception:
                 pass
 
-    def process_list(self):
+    def process_list(self, list_url: str):
         """
-        Adds all of the list additions from the database to the list.
+        Adds all of the list additions from the database to the specified list.
         """
+        list_uri = self._api._did_rkey_to_atproto_uri(
+            self._api._url_to_did_rkey(list_url), constants.list
+        )
+
         for row in track(self._db["to_be_added"].rows, total=self._db["to_be_added"].count):
             try:
                 self._db["added"].get(row["subject"])
@@ -194,14 +194,15 @@ class Moderation:
                         "handle": row["handle"],
                         "source": row["source"],
                         "action": row["action"],
+                        "list_url": list_url
                     },
-                    pk="subject",
+                    pk="subject", alter=True
                 )
 
                 self._db["to_be_added"].delete(row["subject"])
                 
                 self._limiter.try_acquire("Add to moderation list")
-                self._api.add_item_to_list(self.list_uri, row["subject"])
+                self._api.add_item_to_list(list_uri, row["subject"])
             else:
                 print(
                     f"{row['subject']} (handle: {row['handle']}) already added to list, ignoring."
