@@ -209,8 +209,4 @@ class Moderation:
 
 
 if __name__ == "__main__":
-    # test = api.fetch_likes(args.post_url, all=False)[1]
-    # test_did = test.actor.did
-    # api.add_item_to_list(list_uri, test_did)
-
     auto_cli(Moderation)
