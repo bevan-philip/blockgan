@@ -188,6 +188,9 @@ class Moderation:
             try:
                 self._db["added"].get(row["subject"])
             except sqlite_utils.db.NotFoundError:
+                self._limiter.try_acquire("Add to moderation list")
+                self._api.add_item_to_list(list_uri, row["subject"])
+
                 self._db["added"].insert(
                     {
                         "subject": row["subject"],
@@ -200,9 +203,6 @@ class Moderation:
                 )
 
                 self._db["to_be_added"].delete(row["subject"])
-                
-                self._limiter.try_acquire("Add to moderation list")
-                self._api.add_item_to_list(list_uri, row["subject"])
             else:
                 print(
                     f"{row['subject']} (handle: {row['handle']}) already added to list, ignoring."
