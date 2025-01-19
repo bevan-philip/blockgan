@@ -126,8 +126,9 @@ class Moderation:
     # The limits from https://docs.bsky.app/docs/advanced-guides/rate-limits, with a decent amount of 
     # headroom for regular usage.
     _limits = [Rate(1200, Duration.HOUR), Rate(9000, Duration.DAY)]
-    _limiter = Limiter(_limits, max_delay=Duration.HOUR, raise_when_fail=False)
-    _limit_decorator = _limiter.as_decorator()
+    # Create SQLite bucket for storage
+    _sqliteBucket = SQLiteBucket.init_from_file(rates=_limits, db_path="ratelimit.sqlite")
+    _limiter = Limiter(_sqliteBucket, max_delay=Duration.HOUR, raise_when_fail=False)
 
     def __post_init__(self):
         self._db = sqlite_utils.Database("moderation.db")
