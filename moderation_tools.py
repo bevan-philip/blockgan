@@ -6,6 +6,7 @@ import atproto_client.models.app.bsky.graph.listitem
 import sqlite_utils
 from atproto import Client, IdResolver, models
 from jsonargparse import auto_cli
+from pyrate_limiter import Rate, Duration, Limiter
 
 
 @dataclass
@@ -39,7 +40,7 @@ class BlueskyAPI:
         if self.session_string:
             try:
                 self._client.login(session_string=self.session_string)
-            except Exception as e:
+            except Exception:
                 self._client = Client()
                 self._client.login(self.handle, self.app_password)
         else:
@@ -121,6 +122,12 @@ class Moderation:
 
     list_uri: str = field(init=False)
 
+    # The limits from https://docs.bsky.app/docs/advanced-guides/rate-limits, with a decent amount of 
+    # headroom for regular usage.
+    _limits = [Rate(1200, Duration.HOUR), Rate(9000, Duration.DAY)]
+    _limiter = Limiter(_limits, max_delay=Duration.HOUR, raise_when_fail=False)
+    _limit_decorator = _limiter.as_decorator()
+
     def __post_init__(self):
         self._db = sqlite_utils.Database("moderation.db")
 
@@ -187,6 +194,7 @@ class Moderation:
                     },
                     pk="subject",
                 )
+                self._limiter.try_acquire(f"Adding {row['subject']} to moderation list.")
                 # Bit to handle adding to the Bluesky moderation list.
             else:
                 print(
