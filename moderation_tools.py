@@ -180,11 +180,12 @@ class Moderation:
         """
         Adds all of the list additions from the database to the specified list.
         """
+        print("This process will pause quite frequently to ensure that we do not reach rate limits. Do not be alarmed, it is still processing.")
         list_uri = self._api._did_rkey_to_atproto_uri(
             self._api._url_to_did_rkey(list_url), constants.list
         )
 
-        for row in track(self._db["to_be_added"].rows, total=self._db["to_be_added"].count):
+        for row in track(self._db["to_be_added"].rows, total=self._db["to_be_added"].count, show_speed=False):
             try:
                 self._db["added"].get(row["subject"])
             except sqlite_utils.db.NotFoundError:
@@ -197,7 +198,7 @@ class Moderation:
                         "handle": row["handle"],
                         "source": row["source"],
                         "action": row["action"],
-                        "list_url": list_url
+                        "list_url": list_url # Technically speaking, we don't support adding the same DID to multiple block lists. Need a compound PK for that.
                     },
                     pk="subject", alter=True
                 )
