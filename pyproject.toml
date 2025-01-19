@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "atproto>=0.0.56",
+    "jsonargparse>=4.36.0",
     "ruff>=0.9.2",
     "sqlite-utils>=3.38",
 ]
