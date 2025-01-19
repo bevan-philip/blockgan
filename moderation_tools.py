@@ -37,7 +37,11 @@ class BlueskyAPI:
 
     def __post_init__(self):
         if self.session_string:
-            self._client.login(session_string=self.session_string)
+            try:
+                self._client.login(session_string=self.session_string)
+            except Exception as e:
+                self._client = Client()
+                self._client.login(self.handle, self.app_password)
         else:
             self._client.login(self.handle, self.app_password)
 
