@@ -1,4 +1,3 @@
-import argparse
 import datetime
 from dataclasses import dataclass, field
 from typing import Optional
@@ -106,6 +105,7 @@ class BlueskyAPI:
             repo=self._client.me.did, record=record
         )
 
+
 @dataclass
 class Moderation:
     _db: sqlite_utils.Database = field(init=False)
@@ -114,7 +114,7 @@ class Moderation:
     handle: str
     app_password: str
     list_url: str
-    
+
     list_uri: str = field(init=False)
 
     def __post_init__(self):
@@ -125,17 +125,18 @@ class Moderation:
         try:
             session_string = self._db["session"].get(self.handle)["session_string"]
         except sqlite_utils.db.NotFoundError:
-            pass  
-    
+            pass
+
         self._api = BlueskyAPI(self.handle, session_string, self.app_password)
 
         # Handle the session string, and save it in the future.
         if not session_string:
             self._db["session"].insert(
                 {
-                    "handle": self.handle, 
-                    "session_string": self._api._client.export_session_string()
-                }, pk="handle"
+                    "handle": self.handle,
+                    "session_string": self._api._client.export_session_string(),
+                },
+                pk="handle",
             )
 
         def session_change(event, session):
@@ -144,9 +145,8 @@ class Moderation:
         self._api._client.on_session_change(session_change)
 
         self.list_uri = self._api._did_rkey_to_atproto_uri(
-            self._api._url_to_did_rkey(self.list_url), constants.list 
+            self._api._url_to_did_rkey(self.list_url), constants.list
         )
-
 
     def add_likes_to_be_processed(self, post_url: str) -> None:
         """
@@ -162,7 +162,7 @@ class Moderation:
                     "subject": like.actor.did,
                     "handle": like.actor.handle,
                     "source": post_url,
-                    "action": "like"
+                    "action": "like",
                 }
             )
 
@@ -179,13 +179,15 @@ class Moderation:
                         "subject": row["subject"],
                         "handle": row["handle"],
                         "source": row["source"],
-                        "action": row["action"]
-                    }, pk="subject"
+                        "action": row["action"],
+                    },
+                    pk="subject",
                 )
                 # Bit to handle adding to the Bluesky moderation list.
             else:
-                print(f"{row['subject']} (handle: {row['handle']}) already added to list, ignoring.")
-
+                print(
+                    f"{row['subject']} (handle: {row['handle']}) already added to list, ignoring."
+                )
 
 
 if __name__ == "__main__":
