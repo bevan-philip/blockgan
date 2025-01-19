@@ -7,7 +7,7 @@ import sqlite_utils
 from atproto import Client, IdResolver, models
 from jsonargparse import auto_cli
 from rich.progress import track
-from pyrate_limiter import Rate, Duration, Limiter
+from pyrate_limiter import Rate, Duration, Limiter, SQLiteBucket
 
 
 @dataclass
@@ -197,9 +197,11 @@ class Moderation:
                     },
                     pk="subject",
                 )
-                self._db["to_be_added"].remove(row["subject"])
+
+                self._db["to_be_added"].delete(row["subject"])
+                
                 self._limiter.try_acquire("Add to moderation list")
-                # Bit to handle adding to the Bluesky moderation list.
+                self._api.add_item_to_list(self.list_uri, row["subject"])
             else:
                 print(
                     f"{row['subject']} (handle: {row['handle']}) already added to list, ignoring."
