@@ -6,6 +6,7 @@ import atproto_client.models.app.bsky.graph.listitem
 import sqlite_utils
 from atproto import Client, IdResolver, models
 from jsonargparse import auto_cli
+from rich.progress import track
 from pyrate_limiter import Rate, Duration, Limiter
 
 
@@ -166,22 +167,23 @@ class Moderation:
         likes = self._api.fetch_likes(post_url)
         db_to_add = self._db["to_be_added"]
         for like in likes:
-            # We don't look at the cache, or even if there are duplicates already in this list.
-            # We choose to handle that all later.
-            db_to_add.insert(
-                {
-                    "subject": like.actor.did,
-                    "handle": like.actor.handle,
-                    "source": post_url,
-                    "action": "like",
-                }
-            )
+            try:
+                db_to_add.insert(
+                    {
+                        "subject": like.actor.did,
+                        "handle": like.actor.handle,
+                        "source": post_url,
+                        "action": "like",
+                    }, pk="subject"
+                )
+            except Exception:
+                pass
 
     def process_list(self):
         """
         Adds all of the list additions from the database to the list.
         """
-        for row in self._db["to_be_added"].rows:
+        for row in track(self._db["to_be_added"].rows, total=self._db["to_be_added"].count):
             try:
                 self._db["added"].get(row["subject"])
             except sqlite_utils.db.NotFoundError:
@@ -194,7 +196,8 @@ class Moderation:
                     },
                     pk="subject",
                 )
-                self._limiter.try_acquire(f"Adding {row['subject']} to moderation list.")
+                self._db["to_be_added"].remove(row["subject"])
+                self._limiter.try_acquire("Add to moderation list")
                 # Bit to handle adding to the Bluesky moderation list.
             else:
                 print(
