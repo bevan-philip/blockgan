@@ -6,8 +6,8 @@ import atproto_client.models.app.bsky.graph.listitem
 import sqlite_utils
 from atproto import Client, IdResolver, models
 from jsonargparse import auto_cli
+from pyrate_limiter import Duration, Limiter, Rate, SQLiteBucket
 from rich.progress import track
-from pyrate_limiter import Rate, Duration, Limiter, SQLiteBucket
 
 
 @dataclass
@@ -117,43 +117,53 @@ class BlueskyAPI:
 
 @dataclass
 class Moderation:
-    _db: sqlite_utils.Database = field(init=False)
+    _moderationDb: sqlite_utils.Database = field(init=False)
+    _authDb: sqlite_utils.Database = field(init=False)
     _api: BlueskyAPI = field(init=False)
 
     handle: str
     app_password: str
 
-    # The limits from https://docs.bsky.app/docs/advanced-guides/rate-limits, with a decent amount of 
+    # The limits from https://docs.bsky.app/docs/advanced-guides/rate-limits, with a decent amount of
     # headroom for regular usage.
     _limits = [Rate(1200, Duration.HOUR), Rate(9000, Duration.DAY)]
     # Create SQLite bucket for storage
-    _sqliteBucket = SQLiteBucket.init_from_file(rates=_limits, db_path="ratelimit.sqlite")
+    _sqliteBucket = SQLiteBucket.init_from_file(
+        rates=_limits, db_path="ratelimit.sqlite"
+    )
     _limiter = Limiter(_sqliteBucket, max_delay=Duration.HOUR, raise_when_fail=False)
 
     def __post_init__(self):
-        self._db = sqlite_utils.Database("moderation.db")
+        self._moderationDb = sqlite_utils.Database("moderation.db")
+        self._authDb = sqlite_utils.Database("auth.sqlite")
 
         # If we can use a session_string from a previous session, do that - there are rate limits here.
         session_string = None
         try:
-            session_string = self._db["session"].get(self.handle)["session_string"]
+            session_string = self._authDb["session"].get(self.handle)["session_string"]
         except sqlite_utils.db.NotFoundError:
             pass
 
         self._api = BlueskyAPI(self.handle, session_string, self.app_password)
 
         # Handle the session string, and save it in the future.
-        if not session_string:
-            self._db["session"].insert(
-                {
-                    "handle": self.handle,
-                    "session_string": self._api._client.export_session_string(),
-                },
-                pk="handle",
-            )
+        self._authDb["session"].insert(
+            {
+                "handle": self.handle,
+                "session_string": self._api._client.export_session_string(),
+            },
+            pk="handle",
+            ignore=True,
+        )
 
         def session_change(event, session):
-            self._db["session"].update(self.handle, session.encode())
+            # I know we should have already inserted... but it has behaved strangely.
+            self._authDb["session"].insert(
+                {"handle": self.handle, "session_string": session.encode()},
+                pk="handle",
+                ignore="True",
+            )
+            self._authDb["session"].update(self.handle, session.encode())
 
         self._api._client.on_session_change(session_change)
 
@@ -162,7 +172,7 @@ class Moderation:
         Adds all of the likes from a particular post to the database.
         """
         likes = self._api.fetch_likes(post_url)
-        db_to_add = self._db["to_be_added"]
+        db_to_add = self._moderationDb["to_be_added"]
         for like in likes:
             try:
                 db_to_add.insert(
@@ -171,7 +181,8 @@ class Moderation:
                         "handle": like.actor.handle,
                         "source": post_url,
                         "action": "like",
-                    }, pk="subject"
+                    },
+                    pk="subject",
                 )
             except Exception:
                 pass
@@ -180,34 +191,42 @@ class Moderation:
         """
         Adds all of the list additions from the database to the specified list.
         """
-        print("This process will pause quite frequently to ensure that we do not reach rate limits. Do not be alarmed, it is still processing.")
+        print(
+            "This process will pause quite frequently to ensure that we do not reach rate limits. Do not be alarmed, it is still processing."
+        )
         list_uri = self._api._did_rkey_to_atproto_uri(
             self._api._url_to_did_rkey(list_url), constants.list
         )
 
-        for row in track(self._db["to_be_added"].rows, total=self._db["to_be_added"].count, show_speed=False):
+        for row in track(
+            self._moderationDb["to_be_added"].rows,
+            total=self._moderationDb["to_be_added"].count,
+            show_speed=False,
+        ):
             try:
-                self._db["added"].get(row["subject"])
+                self._moderationDb["added"].get(row["subject"])
             except sqlite_utils.db.NotFoundError:
                 self._limiter.try_acquire("Add to moderation list")
                 self._api.add_item_to_list(list_uri, row["subject"])
 
-                self._db["added"].insert(
+                self._moderationDb["added"].insert(
                     {
                         "subject": row["subject"],
                         "handle": row["handle"],
                         "source": row["source"],
                         "action": row["action"],
-                        "list_url": list_url # Technically speaking, we don't support adding the same DID to multiple block lists. Need a compound PK for that.
+                        "list_url": list_url,  # Technically speaking, we don't support adding the same DID to multiple block lists. Need a compound PK for that.
                     },
-                    pk="subject", alter=True
+                    pk="subject",
+                    alter=True,
                 )
 
-                self._db["to_be_added"].delete(row["subject"])
+                self._moderationDb["to_be_added"].delete(row["subject"])
             else:
                 print(
                     f"{row['subject']} (handle: {row['handle']}) already added to list, ignoring."
                 )
+                self._moderationDb["to_be_added"].delete(row["subject"])
 
 
 if __name__ == "__main__":
