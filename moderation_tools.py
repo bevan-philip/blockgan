@@ -158,12 +158,10 @@ class Moderation:
 
         def session_change(event, session):
             # I know we should have already inserted... but it has behaved strangely.
-            self._authDb["session"].insert(
-                {"handle": self.handle, "session_string": session.encode()},
+            self._authDb["session"].upsert(
+                {"handle": self.handle, "session_string": session},
                 pk="handle",
-                ignore="True",
             )
-            self._authDb["session"].update(self.handle, session.encode())
 
         self._api._client.on_session_change(session_change)
 
