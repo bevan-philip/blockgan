@@ -4,7 +4,7 @@ from typing import Optional
 
 import atproto_client.models.app.bsky.graph.listitem
 import sqlite_utils
-from atproto import Client, IdResolver, models
+from atproto import Client, IdResolver, models, SessionEvent
 from jsonargparse import auto_cli
 from pyrate_limiter import Duration, Limiter, Rate, SQLiteBucket
 from rich.progress import track
@@ -158,7 +158,7 @@ class Moderation:
 
         def session_change(event, session):
             # Only update the session string when it's a refresh event
-            if event == "refresh":
+            if event == SessionEvent.REFRESH:
                 self._authDb["session"].upsert(
                     {"handle": self.handle, "session_string": session},
                     pk="handle",
