@@ -157,11 +157,12 @@ class Moderation:
         )
 
         def session_change(event, session):
-            # I know we should have already inserted... but it has behaved strangely.
-            self._authDb["session"].upsert(
-                {"handle": self.handle, "session_string": session},
-                pk="handle",
-            )
+            # Only update the session string when it's a refresh event
+            if event == "refresh":
+                self._authDb["session"].upsert(
+                    {"handle": self.handle, "session_string": session},
+                    pk="handle",
+                )
 
         self._api._client.on_session_change(session_change)
 
