@@ -160,7 +160,7 @@ class Moderation:
             # Only update the session string when it's a refresh event
             if event == SessionEvent.REFRESH:
                 self._authDb["session"].upsert(
-                    {"handle": self.handle, "session_string": session},
+                    {"handle": self.handle, "session_string": self._api._client.export_session_string()},
                     pk="handle",
                 )
 
