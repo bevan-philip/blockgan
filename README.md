@@ -1,4 +1,4 @@
-# bluesky-moderation-tools
+# Blockgan for Bluesky
 
 **This tool is still in development. This tool requires understanding of how to use a terminal.**
 
