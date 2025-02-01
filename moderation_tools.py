@@ -87,7 +87,7 @@ class BlueskyAPI:
             print(f"Error fetching post for URL {url}: {e}")
             return None
 
-    def fetch_likes(self, url: str, all: bool = True) -> list:
+    def fetch_likes(self, url: str, all: bool = True) -> list[models.AppBskyFeedGetLikes.Like]:
         """
         Get the likes from a post, using its Bluesky url.
         """
@@ -163,7 +163,7 @@ class Moderation:
             ignore=True,
         )
 
-        def session_change(event, session):
+        def session_change(event: SessionEvent, session: dict) -> None:
             # Only update the session string when it's a refresh event
             if event == SessionEvent.REFRESH:
                 self._authDb["session"].upsert(
@@ -193,7 +193,7 @@ class Moderation:
             except Exception:
                 pass
 
-    def process_list(self, list_url: str):
+    def process_list(self, list_url: str) -> None:
         """
         Adds all of the list additions from the database to the specified list.
         """
