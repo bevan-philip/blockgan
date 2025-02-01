@@ -19,11 +19,18 @@ class DID_RKey:
 
 
 @dataclass
-class constants:
+class BlueskyConstants:
     """Some useful constants."""
 
     post = "app.bsky.feed.post"
     list = "app.bsky.graph.list"
+
+@dataclass
+class DatabaseNames:
+    """ Locations of various databases """
+    auth = 'auth.sqlite'
+    moderation = 'moderation.sqlite'
+    rates = 'ratelimit.sqlite'
 
 
 @dataclass
@@ -85,7 +92,7 @@ class BlueskyAPI:
         Get the likes from a post, using its Bluesky url.
         """
         did_rkey = self._did_rkey_to_atproto_uri(
-            self._url_to_did_rkey(url), constants.post
+            self._url_to_did_rkey(url), BlueskyConstants.post
         )
         page = self._client.get_likes(did_rkey)
 
@@ -129,13 +136,13 @@ class Moderation:
     _limits = [Rate(1200, Duration.HOUR), Rate(9000, Duration.DAY)]
     # Create SQLite bucket for storage
     _sqliteBucket = SQLiteBucket.init_from_file(
-        rates=_limits, db_path="ratelimit.sqlite"
+        rates=_limits, db_path=DatabaseNames.rates
     )
     _limiter = Limiter(_sqliteBucket, max_delay=Duration.HOUR, raise_when_fail=False)
 
     def __post_init__(self):
-        self._moderationDb = sqlite_utils.Database("moderation.sqlite")
-        self._authDb = sqlite_utils.Database("auth.sqlite")
+        self._moderationDb = sqlite_utils.Database(DatabaseNames.moderation)
+        self._authDb = sqlite_utils.Database(DatabaseNames.auth)
 
         # If we can use a session_string from a previous session, do that - there are rate limits here.
         session_string = None
@@ -194,7 +201,7 @@ class Moderation:
             "This process will pause quite frequently to ensure that we do not reach rate limits. Do not be alarmed, it is still processing."
         )
         list_uri = self._api._did_rkey_to_atproto_uri(
-            self._api._url_to_did_rkey(list_url), constants.list
+            self._api._url_to_did_rkey(list_url), BlueskyConstants.list
         )
 
         for row in track(
