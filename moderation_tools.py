@@ -134,7 +134,7 @@ class Moderation:
     _limiter = Limiter(_sqliteBucket, max_delay=Duration.HOUR, raise_when_fail=False)
 
     def __post_init__(self):
-        self._moderationDb = sqlite_utils.Database("moderation.db")
+        self._moderationDb = sqlite_utils.Database("moderation.sqlite")
         self._authDb = sqlite_utils.Database("auth.sqlite")
 
         # If we can use a session_string from a previous session, do that - there are rate limits here.
