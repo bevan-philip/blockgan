@@ -11,10 +11,6 @@ A CLI application for effectively managing moderation lists.
 - Rate limits itself so that you can continue to use Bluesky,
 - Stores list adds with the source.
 
-### Planned
-- Support user follows
-- Allow exclusions to be manually specified
-
 ## Installation
 Recommendation: use `uv`. Should work with pip or poetry, but untested.
 ```
